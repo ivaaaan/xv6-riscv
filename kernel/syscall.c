@@ -102,6 +102,7 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_sstat(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -128,8 +129,25 @@ static uint64 (*syscalls[])(void) = {
   [SYS_link]    sys_link,
   [SYS_mkdir]   sys_mkdir,
   [SYS_close]   sys_close,
+  [SYS_sstat] sys_sstat,
   // clang-format on
 };
+
+struct spinlock sstat_lock;
+static uint64 sstat[NELEM(syscalls)];
+
+uint64
+sys_sstat(void)
+{
+  int n;
+  argint(0, &n);
+
+  acquire(&sstat_lock);
+  int c = sstat[n];
+  release(&sstat_lock);
+
+  return c;
+}
 
 void
 syscall(void)
@@ -139,6 +157,9 @@ syscall(void)
 
   num = p->trapframe->a7;
   if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    acquire(&sstat_lock);
+    sstat[num]++;
+    release(&sstat_lock);
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();
